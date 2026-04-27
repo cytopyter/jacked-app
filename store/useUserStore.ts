@@ -5,6 +5,7 @@ import type { UserProfile, UserTargets, WeightLog } from '../lib/types';
 import { calculateTargets, todayString } from '../lib/calculations';
 
 interface UserState {
+  _hydrated: boolean;
   profile: UserProfile | null;
   targets: UserTargets | null;
   weightLogs: WeightLog[];
@@ -34,15 +35,15 @@ const DEFAULT_PROFILE: UserProfile = {
 export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
+      _hydrated: false,
       profile: null,
       targets: null,
       weightLogs: [],
 
       setProfile: (partial) => {
-        const current = get().profile ?? DEFAULT_PROFILE;
+        const current = get().profile ?? { ...DEFAULT_PROFILE };
         const updated = { ...current, ...partial };
-        const targets = calculateTargets(updated);
-        set({ profile: updated, targets });
+        set({ profile: updated, targets: calculateTargets(updated) });
       },
 
       completeOnboarding: (profile) => {
@@ -57,13 +58,10 @@ export const useUserStore = create<UserState>()(
 
       logWeight: (weight) => {
         const date = todayString();
-        const existing = get().weightLogs.findIndex(w => w.date === date);
         const logs = [...get().weightLogs];
-        if (existing >= 0) {
-          logs[existing] = { date, weight };
-        } else {
-          logs.push({ date, weight });
-        }
+        const idx = logs.findIndex(w => w.date === date);
+        if (idx >= 0) logs[idx] = { date, weight };
+        else logs.push({ date, weight });
         const profile = get().profile;
         if (profile) {
           const updated = { ...profile, weightKG: weight };
@@ -78,11 +76,14 @@ export const useUserStore = create<UserState>()(
         set({ profile: updated, targets: calculateTargets(updated) });
       },
 
-      reset: () => set({ profile: null, targets: null, weightLogs: [] }),
+      reset: () => set({ profile: null, targets: null, weightLogs: [], _hydrated: false }),
     }),
     {
       name: 'jacked-user-store',
       storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: () => (state) => {
+        if (state) state._hydrated = true;
+      },
     }
   )
 );
