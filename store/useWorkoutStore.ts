@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { WorkoutLog, WorkoutExercise, WorkoutSet, WorkoutPlanDay, ExerciseTemplate } from '../lib/types';
-import { calculateWorkoutVolume, todayString, suggestNextSet } from '../lib/calculations';
+import { calculateWorkoutVolume, todayString, suggestNextSet, calculateStreak } from '../lib/calculations';
 
 // ─── Default Push / Pull / Legs split ────────────────────────────────────────
 
@@ -192,7 +192,6 @@ export const useWorkoutStore = create<WorkoutState>()(
 
       getStreak: () => {
         const dates = get().workoutHistory.map(w => w.date);
-        const { calculateStreak } = require('../lib/calculations');
         return calculateStreak(dates);
       },
     }),
