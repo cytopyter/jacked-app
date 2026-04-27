@@ -1,115 +1,165 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop, Circle, Line } from 'react-native-svg';
 import { Colors } from '../../constants/theme';
+import { useUserStore } from '../../store/useUserStore';
+import { useWorkoutStore } from '../../store/useWorkoutStore';
+import { useNutritionStore } from '../../store/useNutritionStore';
+import { todayString, calculateStreak, extractPersonalRecords } from '../../lib/calculations';
 
-function WeightChart() {
-  const points = [82, 81.2, 80.5, 80.1, 79.6, 79.2, 78.8, 78.5, 78.2];
+function WeightChart({ logs }: { logs: { date: string; weight: number }[] }) {
+  if (logs.length < 2) {
+    return (
+      <View style={{ height: 120, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: Colors.text3, fontSize: 13 }}>Log more weight entries to see your chart</Text>
+      </View>
+    );
+  }
   const w = 300, h = 120;
-  const minW = Math.min(...points), maxW = Math.max(...points);
+  const weights = logs.map(l => l.weight);
+  const minW = Math.min(...weights), maxW = Math.max(...weights);
   const range = maxW - minW || 1;
-  const pts = points.map((p, i) => ({
-    x: (i / (points.length - 1)) * w,
-    y: h - ((p - minW) / range) * (h * 0.8) - h * 0.1,
+  const pts = logs.map((l, i) => ({
+    x: (i / (logs.length - 1)) * w,
+    y: h - ((l.weight - minW) / range) * (h * 0.75) - h * 0.1,
   }));
-  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
   const area = path + ` L ${pts[pts.length - 1].x} ${h} L 0 ${h} Z`;
 
   return (
     <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
       <Defs>
-        <LinearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+        <SvgGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
           <Stop offset="0%" stopColor={Colors.accent} stopOpacity={0.25} />
           <Stop offset="100%" stopColor={Colors.accent} stopOpacity={0} />
-        </LinearGradient>
+        </SvgGradient>
       </Defs>
       <Path d={area} fill="url(#chartGrad)" />
       <Path d={path} stroke={Colors.accent} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Goal line */}
-      <Path d={`M 0 ${h - ((75 - minW) / range) * (h * 0.8) - h * 0.1} L ${w} ${h - ((75 - minW) / range) * (h * 0.8) - h * 0.1}`}
-        stroke={Colors.success} strokeWidth="1.5" strokeDasharray="6 4" fill="none" />
+      {pts.map((p, i) => (
+        <Circle key={i} cx={p.x} cy={p.y} r="3" fill={Colors.accent} />
+      ))}
     </Svg>
   );
 }
 
-const WEEKS = Array.from({ length: 8 }, (_, wi) =>
-  Array.from({ length: 7 }, (_, di) => {
-    const total = wi * 7 + di;
-    const today = 46;
-    if (total > today) return 'future';
-    if (total === today) return 'today';
-    const r = Math.random();
-    if (r > 0.85) return 'missed';
-    if (r > 0.7) return 'light';
-    return 'full';
-  })
-);
-
 export default function ProgressScreen() {
+  const [weightInput, setWeightInput] = useState('');
+  const profile    = useUserStore(s => s.profile);
+  const weightLogs = useUserStore(s => s.weightLogs);
+  const logWeight  = useUserStore(s => s.logWeight);
+  const targets    = useUserStore(s => s.targets);
+
+  const { workoutHistory, xp, rank } = useWorkoutStore();
+  const { getTotals } = useNutritionStore();
+
+  const streak  = calculateStreak(workoutHistory.map(w => w.date));
+  const bestStreak = streak; // simplified — could track historical best
+  const prs     = extractPersonalRecords(workoutHistory);
+
+  const sortedLogs = [...weightLogs].sort((a, b) => a.date.localeCompare(b.date)).slice(-30);
+  const startWeight = sortedLogs[0]?.weight ?? profile?.weightKG ?? 0;
+  const currentWeight = sortedLogs[sortedLogs.length - 1]?.weight ?? profile?.weightKG ?? 0;
+  const change = currentWeight - startWeight;
+
+  const xpToNext  = rank === 'Bronze' ? 2000 : rank === 'Silver' ? 5000 : rank === 'Gold' ? 10000 : 99999;
+  const rankEmoji = rank === 'Bronze' ? '🥉' : rank === 'Silver' ? '🥈' : rank === 'Gold' ? '🥇' : '💎';
+  const rankColor = rank === 'Bronze' ? Colors.bronze : rank === 'Silver' ? Colors.silver : rank === 'Gold' ? Colors.gold : Colors.accent;
+  const nextRank  = rank === 'Bronze' ? 'Silver' : rank === 'Silver' ? 'Gold' : rank === 'Gold' ? 'Diamond' : 'MAX';
+
+  // Last 8 weeks heatmap
+  const today = todayString();
+  const workoutDates = new Set(workoutHistory.map(w => w.date));
+  const WEEKS = Array.from({ length: 8 }, (_, wi) =>
+    Array.from({ length: 7 }, (_, di) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (7 * (7 - wi)) + di);
+      const ds = d.toISOString().split('T')[0];
+      if (ds > today) return 'future';
+      if (ds === today) return 'today';
+      return workoutDates.has(ds) ? 'full' : 'empty';
+    })
+  );
+
+  const handleLogWeight = () => {
+    const w = parseFloat(weightInput);
+    if (isNaN(w) || w < 20 || w > 400) {
+      Alert.alert('Invalid weight', 'Please enter a valid weight in kg.');
+      return;
+    }
+    logWeight(w);
+    setWeightInput('');
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Progress</Text>
-        <TouchableOpacity style={styles.logBtn}>
-          <Text style={styles.logBtnText}>+ Log Weight</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Weight chart */}
         <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Weight</Text>
-            <View style={styles.filters}>
-              {['1M', '3M', '6M', '1Y'].map((f, i) => (
-                <TouchableOpacity key={f} style={[styles.filterBtn, i === 0 && styles.filterActive]}>
-                  <Text style={[styles.filterText, i === 0 && styles.filterTextActive]}>{f}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+          <Text style={styles.cardTitle}>Weight Tracking</Text>
           <View style={{ alignItems: 'center', marginVertical: 16 }}>
-            <WeightChart />
+            <WeightChart logs={sortedLogs} />
           </View>
           <View style={styles.weightStats}>
-            <View style={styles.wStat}>
-              <Text style={styles.wStatLabel}>Start</Text>
-              <Text style={styles.wStatVal}>82.0 kg</Text>
-            </View>
-            <View style={styles.wStat}>
-              <Text style={styles.wStatLabel}>Current</Text>
-              <Text style={[styles.wStatVal, { color: Colors.accent }]}>78.2 kg</Text>
-            </View>
-            <View style={styles.wStat}>
-              <Text style={styles.wStatLabel}>Change</Text>
-              <Text style={[styles.wStatVal, { color: Colors.success }]}>-3.8 kg ↓</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.logWeightBtn}>
-            <Text style={styles.logWeightBtnText}>+ Log Today's Weight</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Rank card */}
-        <View style={[styles.card, { marginTop: 16 }]}>
-          <View style={styles.rankRow}>
-            {['🥉', '🥈', '🥇', '💎'].map((r, i) => (
-              <View key={i} style={[styles.rankBadge, i === 0 && styles.rankBadgeActive]}>
-                <Text style={{ fontSize: 22 }}>{r}</Text>
+            {[
+              { label: 'Start',   val: `${startWeight.toFixed(1)} kg`,    color: Colors.text },
+              { label: 'Current', val: `${currentWeight.toFixed(1)} kg`,  color: Colors.accent },
+              { label: 'Change',  val: `${change >= 0 ? '+' : ''}${change.toFixed(1)} kg`, color: change <= 0 ? Colors.success : Colors.danger },
+            ].map(s => (
+              <View key={s.label} style={styles.wStat}>
+                <Text style={styles.wStatLabel}>{s.label}</Text>
+                <Text style={[styles.wStatVal, { color: s.color }]}>{s.val}</Text>
               </View>
             ))}
           </View>
-          <Text style={[styles.rankName, { color: Colors.bronze }]}>BRONZE RANK</Text>
-          <View style={styles.xpBarTrack}>
-            <View style={[styles.xpBarFill, { width: '62%' }]} />
+          <View style={styles.logWeightRow}>
+            <TextInput
+              style={styles.weightInputField}
+              placeholder={`${currentWeight.toFixed(1)}`}
+              placeholderTextColor={Colors.text3}
+              value={weightInput}
+              onChangeText={setWeightInput}
+              keyboardType="numeric"
+            />
+            <Text style={styles.kgLabel}>kg</Text>
+            <TouchableOpacity style={styles.logWeightBtn} onPress={handleLogWeight}>
+              <Text style={styles.logWeightBtnText}>Log Weight</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={styles.xpLabel}>1,240 / 2,000 XP to Silver</Text>
-          <Text style={styles.rankHint}>12 more consistent workouts to reach Silver</Text>
         </View>
 
-        {/* Streak heatmap */}
+        {/* Rank */}
         <View style={[styles.card, { marginTop: 16 }]}>
-          <Text style={styles.cardTitle}>Streak History</Text>
+          <View style={styles.rankRow}>
+            {['🥉', '🥈', '🥇', '💎'].map((r, i) => {
+              const ranks = ['Bronze', 'Silver', 'Gold', 'Diamond'];
+              const active = ranks[i] === rank;
+              const passed = ['Bronze', 'Silver', 'Gold', 'Diamond'].indexOf(rank) > i;
+              return (
+                <View key={i} style={[styles.rankBadge, (active || passed) && styles.rankBadgeActive]}>
+                  <Text style={{ fontSize: 22, opacity: active || passed ? 1 : 0.35 }}>{r}</Text>
+                </View>
+              );
+            })}
+          </View>
+          <Text style={[styles.rankName, { color: rankColor }]}>{rank.toUpperCase()} RANK</Text>
+          <View style={styles.xpBarTrack}>
+            <View style={[styles.xpBarFill, {
+              width: `${Math.min(100, Math.round((xp / xpToNext) * 100))}%`,
+              backgroundColor: rankColor,
+            }]} />
+          </View>
+          <Text style={styles.xpLabel}>{xp.toLocaleString()} / {xpToNext.toLocaleString()} XP to {nextRank}</Text>
+          <Text style={styles.rankHint}>{Math.max(0, xpToNext - xp).toLocaleString()} XP to reach {nextRank}</Text>
+        </View>
+
+        {/* Workout heatmap */}
+        <View style={[styles.card, { marginTop: 16 }]}>
+          <Text style={styles.cardTitle}>Workout History</Text>
           <View style={styles.heatmap}>
             <View style={styles.heatDays}>
               {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
@@ -119,26 +169,45 @@ export default function ProgressScreen() {
             {WEEKS.map((week, wi) => (
               <View key={wi} style={styles.heatWeek}>
                 {week.map((state, di) => (
-                  <View key={di} style={[styles.heatCell,
-                    state === 'full' && styles.heatFull,
-                    state === 'light' && styles.heatLight,
-                    state === 'missed' && styles.heatMissed,
-                    state === 'today' && styles.heatToday,
+                  <View key={di} style={[
+                    styles.heatCell,
+                    state === 'full'   && styles.heatFull,
+                    state === 'today'  && styles.heatToday,
+                    state === 'future' && styles.heatFuture,
                   ]} />
                 ))}
               </View>
             ))}
           </View>
-          <Text style={styles.streakInfo}>Current: 12 days · Best: 23 days</Text>
+          <Text style={styles.streakInfo}>Current: {streak} days · Workouts: {workoutHistory.length}</Text>
         </View>
+
+        {/* Personal records */}
+        {prs.length > 0 && (
+          <View style={[styles.card, { marginTop: 16 }]}>
+            <Text style={styles.cardTitle}>Personal Records 🏆</Text>
+            {prs.slice(0, 6).map((pr, i) => (
+              <View key={i} style={styles.prRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.prName}>{pr.exerciseName}</Text>
+                  <Text style={styles.prDate}>{pr.date}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.prWeight}>{pr.weight}kg × {pr.reps}</Text>
+                  <Text style={styles.prOneRM}>e1RM: {pr.estimatedOneRM}kg</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Stats grid */}
         <View style={styles.statsGrid}>
           {[
-            { icon: '🔥', val: '12', label: 'Day Streak' },
-            { icon: '💪', val: '47', label: 'Workouts' },
-            { icon: '📅', val: '38', label: 'Days Logged' },
-            { icon: '🏆', val: '6', label: 'Best Week' },
+            { icon: '🔥', val: streak.toString(),                       label: 'Day Streak' },
+            { icon: '💪', val: workoutHistory.length.toString(),        label: 'Workouts' },
+            { icon: '⚡', val: xp.toLocaleString(),                     label: 'Total XP' },
+            { icon: '🏆', val: prs.length.toString(),                   label: 'PRs Set' },
           ].map((s, i) => (
             <View key={i} style={styles.statCard}>
               <Text style={{ fontSize: 22 }}>{s.icon}</Text>
@@ -156,43 +225,32 @@ export default function ProgressScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 24, paddingTop: 56, paddingBottom: 16,
-  },
+  header: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 16 },
   title: { fontSize: 28, fontWeight: '800', color: Colors.text, fontFamily: 'Nunito_800ExtraBold' },
-  logBtn: {
-    backgroundColor: Colors.surfaceRaised, borderRadius: 999,
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderWidth: 1, borderColor: Colors.accent,
-  },
-  logBtnText: { fontSize: 13, fontWeight: '700', color: Colors.accent },
-  card: {
-    marginHorizontal: 24, backgroundColor: Colors.surface,
-    borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.border,
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  cardTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
-  filters: { flexDirection: 'row', gap: 4 },
-  filterBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  filterActive: { backgroundColor: Colors.accent },
-  filterText: { fontSize: 13, color: Colors.text2, fontWeight: '600' },
-  filterTextActive: { color: '#fff', fontWeight: '700' },
+  card: { marginHorizontal: 24, backgroundColor: Colors.surface, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.border },
+  cardTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, marginBottom: 4 },
   weightStats: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 },
   wStat: { flex: 1, alignItems: 'center' },
   wStatLabel: { fontSize: 12, color: Colors.text2, fontWeight: '600' },
   wStatVal: { fontSize: 16, fontWeight: '800', color: Colors.text, fontVariant: ['tabular-nums'], fontFamily: 'Nunito_800ExtraBold' },
-  logWeightBtn: {
-    marginTop: 12, borderWidth: 2, borderColor: Colors.borderActive,
-    borderRadius: 12, height: 44, alignItems: 'center', justifyContent: 'center',
+  logWeightRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
+  weightInputField: {
+    flex: 1, height: 44, backgroundColor: Colors.surfaceRaised,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.borderActive,
+    paddingHorizontal: 14, fontSize: 16, color: Colors.text, fontWeight: '700',
   },
-  logWeightBtnText: { fontSize: 14, fontWeight: '700', color: Colors.text2 },
+  kgLabel: { fontSize: 14, color: Colors.text2, fontWeight: '600' },
+  logWeightBtn: {
+    backgroundColor: Colors.accent, borderRadius: 12, height: 44,
+    paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center',
+  },
+  logWeightBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   rankRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   rankBadge: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.surfaceRaised, alignItems: 'center', justifyContent: 'center', opacity: 0.4 },
-  rankBadgeActive: { opacity: 1, backgroundColor: `${Colors.bronze}22`, borderWidth: 1, borderColor: Colors.bronze },
+  rankBadgeActive: { opacity: 1 },
   rankName: { fontSize: 22, fontWeight: '900', fontFamily: 'Nunito_900Black', marginBottom: 12 },
   xpBarTrack: { height: 12, backgroundColor: Colors.surfaceRaised, borderRadius: 999, overflow: 'hidden', marginBottom: 8 },
-  xpBarFill: { height: '100%', backgroundColor: Colors.bronze, borderRadius: 999 },
+  xpBarFill: { height: '100%', borderRadius: 999 },
   xpLabel: { fontSize: 14, color: Colors.text2, fontWeight: '600' },
   rankHint: { fontSize: 13, color: Colors.text3, marginTop: 6 },
   heatmap: { marginTop: 12, gap: 4 },
@@ -201,14 +259,15 @@ const styles = StyleSheet.create({
   heatWeek: { flexDirection: 'row', gap: 4 },
   heatCell: { width: 28, height: 28, borderRadius: 6, backgroundColor: Colors.surfaceRaised },
   heatFull: { backgroundColor: Colors.accent },
-  heatLight: { backgroundColor: `${Colors.accent}55` },
-  heatMissed: { backgroundColor: `${Colors.danger}33` },
   heatToday: { backgroundColor: Colors.accent, borderWidth: 2, borderColor: '#fff' },
+  heatFuture: { backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border },
   streakInfo: { fontSize: 13, color: Colors.text2, fontWeight: '600', marginTop: 12 },
-  statsGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 12,
-    paddingHorizontal: 24, marginTop: 16,
-  },
+  prRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  prName: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  prDate: { fontSize: 11, color: Colors.text3, marginTop: 2 },
+  prWeight: { fontSize: 14, fontWeight: '800', color: Colors.accent },
+  prOneRM: { fontSize: 11, color: Colors.text3, marginTop: 2 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 24, marginTop: 16 },
   statCard: {
     width: '46%', backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: Colors.border, alignItems: 'center', gap: 4,

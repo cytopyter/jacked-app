@@ -5,17 +5,19 @@ import OnboardProgress from '../../components/OnboardProgress';
 import OptionCard from '../../components/OptionCard';
 import PrimaryButton from '../../components/PrimaryButton';
 import { Colors } from '../../constants/theme';
+import { useUserStore } from '../../store/useUserStore';
 
 const LEVELS = [
   { id: 'sedentary', icon: '🪑', title: 'Sedentary', sub: 'Desk job, little to no exercise' },
   { id: 'light', icon: '🚶', title: 'Lightly Active', sub: '1–2 workouts per week' },
   { id: 'moderate', icon: '🏃', title: 'Moderately Active', sub: '3–4 workouts per week', tag: 'Most common', tagColor: Colors.success },
-  { id: 'very', icon: '🏋️', title: 'Very Active', sub: '5–6 workouts per week' },
-  { id: 'athlete', icon: '⚡', title: 'Athlete Level', sub: '2× daily training' },
+  { id: 'active', icon: '🏋️', title: 'Very Active', sub: '5–6 workouts per week' },
+  { id: 'extreme', icon: '⚡', title: 'Athlete Level', sub: '2× daily training' },
 ];
 
 export default function ActivityScreen() {
   const [selected, setSelected] = useState<string | null>('moderate');
+  const setProfile = useUserStore(s => s.setProfile);
 
   return (
     <View style={styles.container}>
@@ -40,7 +42,7 @@ export default function ActivityScreen() {
         <PrimaryButton
           label="Continue"
           disabled={!selected}
-          onPress={() => router.push('/onboarding/body-fat')}
+          onPress={() => { setProfile({ pal: selected as any }); router.push('/onboarding/body-fat'); }}
           style={{ marginTop: 20 }}
         />
       </ScrollView>

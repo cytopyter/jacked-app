@@ -1,132 +1,124 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated } from 'react-native';
 import { router } from 'expo-router';
 import Max from '../../components/Max';
-import PrimaryButton from '../../components/PrimaryButton';
 import { Colors } from '../../constants/theme';
+import { useUserStore } from '../../store/useUserStore';
 
-const CARDS = [
-  { emoji: '🔥', title: 'Daily Calories', val: 2150, suffix: 'kcal/day', color: Colors.accent },
-  { emoji: '💪', title: 'Daily Protein', val: 150, suffix: 'grams', color: Colors.success },
-  { emoji: '🏋️', title: 'Workout Split', text: 'Push / Pull / Legs', sub: '5 days per week', color: Colors.warning },
-  { emoji: '🏃', title: 'Cardio', text: '2× per week', sub: '25 min moderate', color: Colors.purple },
-];
-
-function AnimatedNumber({ target, duration = 800 }: { target: number; duration?: number }) {
-  const [val, setVal] = useState(0);
+function AnimatedNumber({ target, suffix = '' }: { target: number; suffix?: string }) {
+  const [display, setDisplay] = useState(0);
   useEffect(() => {
-    const start = Date.now();
-    const tick = () => {
-      const elapsed = Date.now() - start;
-      const progress = Math.min(elapsed / duration, 1);
-      const ease = 1 - Math.pow(1 - progress, 3);
-      setVal(Math.round(target * ease));
-      if (progress < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+    let start = 0;
+    const step = Math.max(1, target / 40);
+    const interval = setInterval(() => {
+      start += step;
+      if (start >= target) { setDisplay(target); clearInterval(interval); }
+      else setDisplay(Math.round(start));
+    }, 30);
+    return () => clearInterval(interval);
   }, [target]);
-  return <Text style={styles.cardVal}>{val.toLocaleString()}</Text>;
+  return <Text style={styles.statVal}>{display.toLocaleString()}{suffix}</Text>;
 }
 
 export default function PlanRevealScreen() {
-  const [visible, setVisible] = useState(0);
+  const targets = useUserStore(s => s.targets);
+  const profile = useUserStore(s => s.profile);
+  const opacities = [
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+  ];
 
   useEffect(() => {
-    CARDS.forEach((_, i) => {
-      setTimeout(() => setVisible(v => v + 1), i * 180 + 300);
+    opacities.forEach((anim, i) => {
+      Animated.timing(anim, { toValue: 1, duration: 400, delay: 300 + i * 200, useNativeDriver: true }).start();
     });
   }, []);
 
+  const kcal    = targets?.calorieGoal ?? 2150;
+  const protein = targets?.proteinGoal ?? 150;
+  const carbs   = targets?.carbsGoal   ?? 220;
+  const fat     = targets?.fatGoal     ?? 60;
+
+  const stats = [
+    { label: 'Daily Calories', value: kcal,    suffix: ' kcal', color: Colors.accent },
+    { label: 'Protein Goal',   value: protein,  suffix: 'g',     color: Colors.success },
+    { label: 'Carbs Goal',     value: carbs,    suffix: 'g',     color: Colors.warning },
+    { label: 'Fat Goal',       value: fat,       suffix: 'g',     color: Colors.danger },
+  ];
+
   return (
     <View style={styles.container}>
-      {/* Particles */}
-      {Array.from({ length: 18 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute',
-          width: 3, height: 3, borderRadius: 2,
-          backgroundColor: [Colors.accent, Colors.success, Colors.purple][i % 3],
-          left: `${(i * 5.7) % 100}%` as any,
-          bottom: -10,
-          opacity: 0.5,
-        }} />
-      ))}
-
-      {/* Full progress */}
-      <View style={[styles.progressBar, { width: '100%', backgroundColor: Colors.success }]} />
-
-      <View style={styles.scroll}>
-        <View style={styles.mascotArea}>
-          <Max size={130} mood="cheer" />
-          <Text style={styles.overline}>YOUR PERSONALIZED PLAN</Text>
-          <Text style={styles.headline}>You're ready to{'\n'}get Jacked. 🔥</Text>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.mascotWrap}>
+          <Max size={100} mood="cheer" />
         </View>
+        <Text style={styles.title}>Your plan is ready!</Text>
+        <Text style={styles.subtitle}>
+          Based on your profile{profile?.name ? `, ${profile.name}` : ''}, here's exactly what I've calculated.
+        </Text>
 
-        <View style={styles.cards}>
-          {CARDS.map((c, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                styles.card,
-                { borderLeftColor: c.color, opacity: i < visible ? 1 : 0, transform: [{ translateY: i < visible ? 0 : 20 }] }
-              ]}
-            >
-              <View style={[styles.cardIcon, { backgroundColor: `${c.color}22` }]}>
-                <Text style={{ fontSize: 22 }}>{c.emoji}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{c.title}</Text>
-                {'val' in c ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-                    <AnimatedNumber target={c.val} />
-                    <Text style={styles.cardSuffix}>{c.suffix}</Text>
-                  </View>
-                ) : (
-                  <>
-                    <Text style={[styles.cardVal, { fontSize: 20 }]}>{c.text}</Text>
-                    <Text style={styles.cardSuffix}>{c.sub}</Text>
-                  </>
-                )}
+        <View style={styles.statsGrid}>
+          {stats.map((s, i) => (
+            <Animated.View key={i} style={[styles.statCard, { opacity: opacities[i] }]}>
+              <Text style={styles.statLabel}>{s.label}</Text>
+              <AnimatedNumber target={s.value} suffix={s.suffix} />
+              <View style={[styles.statBar, { backgroundColor: `${s.color}22` }]}>
+                <View style={[styles.statBarFill, { backgroundColor: s.color }]} />
               </View>
             </Animated.View>
           ))}
         </View>
 
-        <PrimaryButton
-          label="Start My Transformation →"
-          onPress={() => router.replace('/(tabs)')}
-          style={{ marginTop: 8 }}
-          variant="primary"
-        />
-        <TouchableOpacity style={{ marginTop: 14, alignItems: 'center' }}>
-          <Text style={{ fontSize: 12, color: Colors.text3 }}>You can adjust anything later.</Text>
+        {targets && (
+          <View style={styles.tdeeCard}>
+            <Text style={styles.tdeeLabel}>Your maintenance calories (TDEE)</Text>
+            <Text style={styles.tdeeVal}>{targets.tdee.toLocaleString()} kcal/day</Text>
+            <Text style={styles.tdeeNote}>
+              {targets.deficitKcal > 0
+                ? `${targets.deficitKcal} kcal daily deficit → ~${Math.round(targets.deficitKcal * 7 / 7700 * 10) / 10}kg/week loss`
+                : targets.deficitKcal < 0
+                ? `${Math.abs(targets.deficitKcal)} kcal daily surplus`
+                : 'Eating at maintenance'}
+            </Text>
+          </View>
+        )}
+
+        <TouchableOpacity style={styles.cta} onPress={() => router.replace('/(tabs)')}>
+          <Text style={styles.ctaText}>Let's Get JACKED →</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  progressBar: { position: 'absolute', top: 0, left: 0, height: 3, zIndex: 10 },
-  scroll: { flex: 1, padding: 24, paddingTop: 40 },
-  mascotArea: { alignItems: 'center', marginBottom: 24, gap: 4 },
-  overline: {
-    fontSize: 11, fontWeight: '800', color: Colors.accent,
-    textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 8,
+  scroll: { paddingHorizontal: 24, paddingTop: 60, paddingBottom: 40, alignItems: 'center' },
+  mascotWrap: { width: 100, height: 100, marginBottom: 20 },
+  title: { fontSize: 30, fontWeight: '900', color: Colors.text, fontFamily: 'Nunito_900Black', textAlign: 'center' },
+  subtitle: { fontSize: 15, color: Colors.text2, textAlign: 'center', marginTop: 8, marginBottom: 28, lineHeight: 22 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, width: '100%' },
+  statCard: {
+    width: '47%', backgroundColor: Colors.surface, borderRadius: 20, padding: 16,
+    borderWidth: 1, borderColor: Colors.border, gap: 6,
   },
-  headline: {
-    fontSize: 30, fontWeight: '900', color: Colors.text, textAlign: 'center',
-    fontFamily: 'Nunito_900Black', lineHeight: 38,
+  statLabel: { fontSize: 12, color: Colors.text2, fontWeight: '700' },
+  statVal: { fontSize: 26, fontWeight: '900', color: Colors.text, fontFamily: 'Nunito_900Black' },
+  statBar: { height: 4, borderRadius: 999, overflow: 'hidden' },
+  statBarFill: { height: '100%', borderRadius: 999, width: '100%' },
+  tdeeCard: {
+    width: '100%', marginTop: 16, backgroundColor: Colors.surfaceRaised, borderRadius: 20,
+    padding: 16, borderWidth: 1, borderColor: Colors.borderActive, alignItems: 'center', gap: 4,
   },
-  cards: { gap: 12 },
-  card: {
-    backgroundColor: Colors.surfaceRaised, borderRadius: 18, padding: 18,
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    borderWidth: 1, borderColor: Colors.borderActive,
-    borderLeftWidth: 4,
+  tdeeLabel: { fontSize: 12, color: Colors.text2, fontWeight: '600' },
+  tdeeVal: { fontSize: 22, fontWeight: '900', color: Colors.accent, fontFamily: 'Nunito_900Black' },
+  tdeeNote: { fontSize: 13, color: Colors.text3, textAlign: 'center' },
+  cta: {
+    marginTop: 28, width: '100%', backgroundColor: Colors.accent, borderRadius: 16, height: 56,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: Colors.accentDim, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4,
   },
-  cardIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  cardTitle: { fontSize: 12, fontWeight: '700', color: Colors.text2, textTransform: 'uppercase', letterSpacing: 0.5 },
-  cardVal: { fontSize: 24, fontWeight: '900', color: Colors.text, fontVariant: ['tabular-nums'], fontFamily: 'Nunito_900Black' },
-  cardSuffix: { fontSize: 13, color: Colors.text2 },
+  ctaText: { fontSize: 18, fontWeight: '900', color: '#fff', fontFamily: 'Nunito_900Black' },
 });

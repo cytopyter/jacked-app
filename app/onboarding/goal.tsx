@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import OnboardProgress from '../../components/OnboardProgress';
 import PrimaryButton from '../../components/PrimaryButton';
 import { Colors } from '../../constants/theme';
+import { useUserStore } from '../../store/useUserStore';
 
 const PACE = [
   { id: 'slow', icon: '🐢', label: 'Slow', detail: '±0.25kg/wk' },
@@ -14,6 +15,7 @@ const PACE = [
 export default function GoalScreen() {
   const [goal, setGoal] = useState<'cut' | 'bulk' | null>(null);
   const [pace, setPace] = useState<string>('moderate');
+  const setProfile = useUserStore(s => s.setProfile);
 
   return (
     <View style={styles.container}>
@@ -73,7 +75,7 @@ export default function GoalScreen() {
         <PrimaryButton
           label="Build My Plan →"
           disabled={!goal}
-          onPress={() => router.push('/onboarding/training-days')}
+          onPress={() => { setProfile({ goal: goal === 'cut' ? 'lose' : 'gain', pace: pace as any }); router.push('/onboarding/training-days'); }}
           style={{ marginTop: 24 }}
         />
       </View>

@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import OnboardProgress from '../../components/OnboardProgress';
 import PrimaryButton from '../../components/PrimaryButton';
 import { Colors } from '../../constants/theme';
+import { useUserStore } from '../../store/useUserStore';
 
 function Stepper({ value, unit, onInc, onDec }: { value: number; unit: string; onInc: () => void; onDec: () => void }) {
   return (
@@ -26,6 +27,7 @@ export default function HeightWeightScreen() {
   const [unitKg, setUnitKg] = useState(true);
   const [heightCm, setHeightCm] = useState(175);
   const [weightKg, setWeightKg] = useState(75);
+  const setProfile = useUserStore(s => s.setProfile);
 
   return (
     <View style={styles.container}>
@@ -70,7 +72,7 @@ export default function HeightWeightScreen() {
         </View>
         <PrimaryButton
           label="Continue"
-          onPress={() => router.push('/onboarding/activity')}
+          onPress={() => { setProfile({ heightCM: heightCm, weightKG: weightKg }); router.push('/onboarding/activity'); }}
           style={{ marginTop: 16 }}
         />
       </View>

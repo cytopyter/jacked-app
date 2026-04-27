@@ -1,83 +1,131 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import CalorieRing from '../../components/CalorieRing';
 import MacroBar from '../../components/MacroBar';
 import Max from '../../components/Max';
 import { Colors } from '../../constants/theme';
+import { useUserStore } from '../../store/useUserStore';
+import { useNutritionStore } from '../../store/useNutritionStore';
+import { useWorkoutStore, DEFAULT_PLAN } from '../../store/useWorkoutStore';
+import { todayString, formatDate, calculateStreak } from '../../lib/calculations';
 
-const HABITS = [
-  { day: 'Mon', done: true }, { day: 'Tue', done: true }, { day: 'Wed', done: true },
-  { day: 'Thu', active: true }, { day: 'Fri', done: false }, { day: 'Sat', done: false }, { day: 'Sun', done: false },
-];
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function HomeScreen() {
+  const profile   = useUserStore(s => s.profile);
+  const targets   = useUserStore(s => s.targets);
+  const logWeight = useUserStore(s => s.logWeight);
+  const weightLogs = useUserStore(s => s.weightLogs);
+
+  const { getTotals, addWater, getDay } = useNutritionStore();
+  const { workoutHistory, currentPlanDayIndex, xp, rank } = useWorkoutStore();
+
+  const today   = todayString();
+  const totals  = getTotals(today);
+  const targets_ = targets;
+
+  const calorieGoal = targets_?.calorieGoal ?? 2000;
+  const proteinGoal = targets_?.proteinGoal ?? 150;
+  const carbsGoal   = targets_?.carbsGoal   ?? 200;
+  const fatGoal     = targets_?.fatGoal     ?? 65;
+
+  const streak = calculateStreak(workoutHistory.map(w => w.date));
+  const todayPlan = DEFAULT_PLAN[currentPlanDayIndex];
+
+  const rankEmoji = rank === 'Bronze' ? '🥉' : rank === 'Silver' ? '🥈' : rank === 'Gold' ? '🥇' : '💎';
+  const rankColor = rank === 'Bronze' ? Colors.bronze : rank === 'Silver' ? Colors.silver : rank === 'Gold' ? Colors.gold : Colors.accent;
+  const xpToNext  = rank === 'Bronze' ? 2000 : rank === 'Silver' ? 5000 : rank === 'Gold' ? 10000 : 99999;
+
+  // Last 7 days workout dot
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const dateStr = d.toISOString().split('T')[0];
+    const isToday = dateStr === today;
+    const worked  = workoutHistory.some(w => w.date === dateStr);
+    return { day: DAYS[d.getDay() === 0 ? 6 : d.getDay() - 1], worked, isToday };
+  });
+
+  const firstName = profile?.name?.split(' ')[0] || 'there';
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Good morning, Alex.</Text>
-            <Text style={styles.date}>Monday, April 27 · 12-day streak 🔥</Text>
+            <Text style={styles.greeting}>{greeting}, {firstName}.</Text>
+            <Text style={styles.date}>{formatDate(today)} {streak > 0 ? `· ${streak}-day streak 🔥` : ''}</Text>
           </View>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>A</Text>
+            <Text style={styles.avatarText}>{firstName.charAt(0).toUpperCase()}</Text>
           </View>
         </View>
 
-        {/* Calorie Ring Hero Card */}
+        {/* Calorie ring hero */}
         <View style={styles.heroCard}>
           <View style={styles.heroLeft}>
-            <CalorieRing eaten={910} total={2150} size={160} />
-            <Text style={styles.heroGoal}>of 2,150 daily goal</Text>
+            <CalorieRing eaten={totals.kcal} total={calorieGoal} size={160} />
+            <Text style={styles.heroGoal}>of {calorieGoal.toLocaleString()} daily goal</Text>
           </View>
           <View style={styles.heroRight}>
-            <MacroBar label="Protein" current={98} goal={150} color={Colors.accent} />
-            <MacroBar label="Carbs" current={140} goal={200} color={Colors.warning} />
-            <MacroBar label="Fat" current={38} goal={60} color={Colors.danger} />
+            <MacroBar label="Protein" current={Math.round(totals.protein)} goal={proteinGoal} color={Colors.accent} />
+            <MacroBar label="Carbs"   current={Math.round(totals.carbs)}   goal={carbsGoal}  color={Colors.warning} />
+            <MacroBar label="Fat"     current={Math.round(totals.fat)}     goal={fatGoal}    color={Colors.danger} />
           </View>
         </View>
 
-        {/* Quick stats strip */}
+        {/* Quick stats */}
         <View style={styles.statsStrip}>
-          <View style={styles.statItem}><Text style={styles.statVal}>320</Text><Text style={styles.statLabel}>🏃 Burned</Text></View>
+          <View style={styles.statItem}>
+            <Text style={styles.statVal}>{(totals.water / 1000).toFixed(1)}L</Text>
+            <Text style={styles.statLabel}>💧 Water</Text>
+          </View>
           <View style={styles.statDivider} />
-          <View style={styles.statItem}><Text style={styles.statVal}>2.1L</Text><Text style={styles.statLabel}>💧 Water</Text></View>
+          <View style={styles.statItem}>
+            <Text style={styles.statVal}>{Math.max(0, calorieGoal - totals.kcal).toLocaleString()}</Text>
+            <Text style={styles.statLabel}>📊 Remaining</Text>
+          </View>
           <View style={styles.statDivider} />
-          <View style={styles.statItem}><Text style={styles.statVal}>1,830</Text><Text style={styles.statLabel}>📊 Net</Text></View>
+          <View style={styles.statItem}>
+            <Text style={styles.statVal}>{workoutHistory.length}</Text>
+            <Text style={styles.statLabel}>💪 Workouts</Text>
+          </View>
         </View>
 
         {/* Streak + Rank */}
         <View style={styles.row2}>
           <LinearGradient colors={['#1C1500', Colors.surface]} style={styles.miniCard}>
             <Text style={{ fontSize: 22 }}>🔥</Text>
-            <Text style={[styles.bigNum, { color: Colors.gold }]}>12</Text>
+            <Text style={[styles.bigNum, { color: Colors.gold }]}>{streak}</Text>
             <Text style={styles.miniLabel}>day streak</Text>
           </LinearGradient>
           <View style={styles.miniCard}>
-            <Text style={{ fontSize: 22 }}>🥉</Text>
-            <Text style={[styles.bigNum, { color: Colors.bronze }]}>Bronze</Text>
-            <Text style={styles.miniLabel}>1,240 / 2,000 XP</Text>
+            <Text style={{ fontSize: 22 }}>{rankEmoji}</Text>
+            <Text style={[styles.bigNum, { color: rankColor }]}>{rank}</Text>
+            <Text style={styles.miniLabel}>{xp.toLocaleString()} / {xpToNext.toLocaleString()} XP</Text>
           </View>
         </View>
 
-        {/* Weekly Habit Dots */}
+        {/* Weekly habit dots */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>This week</Text>
-            <TouchableOpacity><Text style={styles.sectionLink}>See history →</Text></TouchableOpacity>
           </View>
           <View style={styles.habitRow}>
-            {HABITS.map((h, i) => (
+            {last7.map((h, i) => (
               <View key={i} style={styles.habitItem}>
                 <View style={[
                   styles.habitDot,
-                  h.done && styles.habitDone,
-                  h.active && styles.habitActive,
+                  h.worked && styles.habitDone,
+                  h.isToday && !h.worked && styles.habitActive,
                 ]}>
-                  {h.done && <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>✓</Text>}
-                  {h.active && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' }} />}
+                  {h.worked && <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>✓</Text>}
+                  {h.isToday && !h.worked && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' }} />}
                 </View>
                 <Text style={styles.habitDay}>{h.day}</Text>
               </View>
@@ -85,32 +133,38 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Today's Workout Card */}
+        {/* Today's Workout */}
         <View style={[styles.workoutCard, { borderLeftColor: Colors.accent, borderLeftWidth: 4 }]}>
           <View style={styles.workoutTags}>
             <View style={styles.chip}><Text style={styles.chipText}>TODAY</Text></View>
-            <View style={[styles.chip, { borderColor: Colors.border }]}><Text style={[styles.chipText, { color: Colors.text2 }]}>~55 min</Text></View>
+            <View style={[styles.chip, { borderColor: Colors.border }]}>
+              <Text style={[styles.chipText, { color: Colors.text2 }]}>~{todayPlan.exercises.length * 10} min</Text>
+            </View>
           </View>
-          <Text style={styles.workoutTitle}>PUSH DAY</Text>
-          <Text style={styles.workoutMuscles}>Chest · Shoulders · Triceps</Text>
-          <Text style={styles.workoutDetail}>6 exercises</Text>
-          <TouchableOpacity style={styles.startBtn}>
+          <Text style={styles.workoutTitle}>{todayPlan.name.toUpperCase()}</Text>
+          <Text style={styles.workoutMuscles}>{todayPlan.muscles}</Text>
+          <Text style={styles.workoutDetail}>{todayPlan.exercises.length} exercises · Progressive overload</Text>
+          <TouchableOpacity style={styles.startBtn} onPress={() => router.push('/(tabs)/workout')}>
             <Text style={styles.startBtnText}>Start Workout →</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Max's Message Card */}
+        {/* Max message */}
         <View style={styles.maxCard}>
           <View style={styles.maxCardLeft}>
             <View style={styles.maxAvatar}>
-              <Max size={56} mood="default" />
+              <Max size={56} mood={totals.protein >= proteinGoal * 0.8 ? 'cheer' : 'default'} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.maxName}>Coach Max</Text>
               <Text style={styles.maxMsg}>
-                You're 98g into protein. One more chicken breast and you're locked. 💪
+                {totals.kcal === 0
+                  ? `Let's get started! Log your first meal to track today's calories. Your goal is ${calorieGoal.toLocaleString()} kcal.`
+                  : totals.protein < proteinGoal * 0.5
+                  ? `You're at ${Math.round(totals.protein)}g protein. Need ${proteinGoal - Math.round(totals.protein)}g more to hit your goal. Add a high-protein meal! 💪`
+                  : `${Math.round(totals.protein)}g protein logged — great progress! ${calorieGoal - totals.kcal > 0 ? `${calorieGoal - totals.kcal} kcal remaining today.` : 'You\'ve hit your calorie goal!'}`
+                }
               </Text>
-              <Text style={styles.maxFooter}>3 messages left this week · Upgrade for unlimited</Text>
             </View>
           </View>
         </View>
@@ -120,11 +174,17 @@ export default function HomeScreen() {
 
       {/* Quick log bar */}
       <View style={styles.quickLog}>
-        <TouchableOpacity style={styles.quickLogBtn}><Text style={styles.quickLogText}>🍎 Log Meal</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.quickLogBtn} onPress={() => router.push('/(tabs)/nutrition')}>
+          <Text style={styles.quickLogText}>🍎 Log Meal</Text>
+        </TouchableOpacity>
         <View style={styles.quickLogDivider} />
-        <TouchableOpacity style={styles.quickLogBtn}><Text style={styles.quickLogText}>💪 Log Workout</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.quickLogBtn} onPress={() => router.push('/(tabs)/workout')}>
+          <Text style={styles.quickLogText}>💪 Workout</Text>
+        </TouchableOpacity>
         <View style={styles.quickLogDivider} />
-        <TouchableOpacity style={styles.quickLogBtn}><Text style={styles.quickLogText}>💧 Log Water</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.quickLogBtn} onPress={() => addWater(today, 250)}>
+          <Text style={styles.quickLogText}>💧 +250ml</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -147,8 +207,7 @@ const styles = StyleSheet.create({
   heroCard: {
     flexDirection: 'row', marginHorizontal: 24,
     backgroundColor: Colors.surfaceRaised, borderRadius: 24,
-    padding: 20, borderWidth: 1, borderColor: Colors.borderActive,
-    gap: 20,
+    padding: 20, borderWidth: 1, borderColor: Colors.borderActive, gap: 20,
   },
   heroLeft: { alignItems: 'center', gap: 6 },
   heroGoal: { fontSize: 12, color: Colors.text2, fontWeight: '600' },
@@ -156,8 +215,7 @@ const styles = StyleSheet.create({
   statsStrip: {
     flexDirection: 'row', marginHorizontal: 24, marginTop: 12,
     backgroundColor: Colors.surface, borderRadius: 16, padding: 14,
-    borderWidth: 1, borderColor: Colors.border,
-    alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.border, alignItems: 'center',
   },
   statItem: { flex: 1, alignItems: 'center', gap: 2 },
   statVal: { fontSize: 14, fontWeight: '900', color: Colors.text, fontVariant: ['tabular-nums'], fontFamily: 'Nunito_900Black' },
@@ -166,21 +224,18 @@ const styles = StyleSheet.create({
   row2: { flexDirection: 'row', gap: 12, marginHorizontal: 24, marginTop: 12 },
   miniCard: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: 20,
-    padding: 16, borderWidth: 1, borderColor: Colors.border,
-    alignItems: 'center', gap: 4,
+    padding: 16, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', gap: 4,
   },
   bigNum: { fontSize: 20, fontWeight: '900', fontFamily: 'Nunito_900Black' },
   miniLabel: { fontSize: 12, color: Colors.text2, textAlign: 'center' },
   section: { marginHorizontal: 24, marginTop: 20 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
-  sectionLink: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
   habitRow: { flexDirection: 'row', justifyContent: 'space-between' },
   habitItem: { alignItems: 'center', gap: 6 },
   habitDot: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: Colors.surfaceRaised,
-    borderWidth: 2, borderColor: Colors.border,
+    backgroundColor: Colors.surfaceRaised, borderWidth: 2, borderColor: Colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
   habitDone: { backgroundColor: Colors.success, borderColor: Colors.successDark },
@@ -195,10 +250,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.borderActive, overflow: 'hidden',
   },
   workoutTags: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  chip: {
-    borderWidth: 1, borderColor: Colors.accent, borderRadius: 999,
-    paddingHorizontal: 10, paddingVertical: 3,
-  },
+  chip: { borderWidth: 1, borderColor: Colors.accent, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   chipText: { fontSize: 10, fontWeight: '800', color: Colors.accent, textTransform: 'uppercase', letterSpacing: 0.5 },
   workoutTitle: { fontSize: 26, fontWeight: '900', color: Colors.text, fontFamily: 'Nunito_900Black' },
   workoutMuscles: { fontSize: 15, color: Colors.text2, marginTop: 2 },
@@ -218,7 +270,6 @@ const styles = StyleSheet.create({
   maxAvatar: { width: 56, height: 56, borderRadius: 28, overflow: 'hidden' },
   maxName: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 4 },
   maxMsg: { fontSize: 14, color: Colors.text2, lineHeight: 20 },
-  maxFooter: { fontSize: 11, color: Colors.text3, marginTop: 8 },
   quickLog: {
     flexDirection: 'row', backgroundColor: Colors.surface,
     borderTopWidth: 1, borderTopColor: Colors.border, height: 56,

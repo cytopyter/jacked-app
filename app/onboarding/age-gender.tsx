@@ -5,10 +5,12 @@ import OnboardProgress from '../../components/OnboardProgress';
 import OptionCard from '../../components/OptionCard';
 import PrimaryButton from '../../components/PrimaryButton';
 import { Colors } from '../../constants/theme';
+import { useUserStore } from '../../store/useUserStore';
 
 export default function AgeGenderScreen() {
   const [age, setAge] = useState(25);
   const [gender, setGender] = useState<'male' | 'female' | null>(null);
+  const setProfile = useUserStore(s => s.setProfile);
 
   return (
     <View style={styles.container}>
@@ -56,7 +58,7 @@ export default function AgeGenderScreen() {
         <PrimaryButton
           label="Continue"
           disabled={!gender}
-          onPress={() => router.push('/onboarding/height-weight')}
+          onPress={() => { setProfile({ age, gender: gender! }); router.push('/onboarding/height-weight'); }}
           style={{ marginTop: 12 }}
         />
       </View>

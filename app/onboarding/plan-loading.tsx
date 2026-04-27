@@ -3,19 +3,33 @@ import { View, Text, StyleSheet, Animated } from 'react-native';
 import { router } from 'expo-router';
 import Max from '../../components/Max';
 import { Colors } from '../../constants/theme';
+import { useUserStore } from '../../store/useUserStore';
+import { calculateTargets } from '../../lib/calculations';
 
-const STEPS = [
-  { label: 'Calculating your maintenance calories...', result: 'TDEE: 2,650 kcal/day' },
-  { label: 'Applying your deficit...', result: 'Target: 2,150 kcal/day' },
-  { label: 'Optimising protein & macros...', result: '150g protein · 160g carbs · 60g fat' },
-  { label: 'Building your personalised split...', result: 'Push/Pull/Legs · 5×/wk' },
+const DEFAULT_STEPS = [
+  { label: 'Calculating your maintenance calories...', result: '' },
+  { label: 'Applying your deficit...', result: '' },
+  { label: 'Optimising protein & macros...', result: '' },
+  { label: 'Building your personalised split...', result: '' },
 ];
 
 export default function PlanLoadingScreen() {
   const [step, setStep] = useState(0);
   const progressWidth = useRef(new Animated.Value(0)).current;
+  const profile = useUserStore(s => s.profile);
+  const completeOnboarding = useUserStore(s => s.completeOnboarding);
+
+  const targets = profile ? calculateTargets(profile) : null;
+  const STEPS = [
+    { label: 'Calculating your maintenance calories...', result: targets ? `TDEE: ${targets.tdee.toLocaleString()} kcal/day` : '' },
+    { label: 'Applying your deficit...', result: targets ? `Target: ${targets.calorieGoal.toLocaleString()} kcal/day` : '' },
+    { label: 'Optimising protein & macros...', result: targets ? `${targets.proteinGoal}g protein · ${targets.carbsGoal}g carbs · ${targets.fatGoal}g fat` : '' },
+    { label: 'Building your personalised split...', result: `Push/Pull/Legs · ${profile?.trainingDays ?? 5}×/wk` },
+  ];
 
   useEffect(() => {
+    if (profile) completeOnboarding(profile);
+
     Animated.timing(progressWidth, {
       toValue: 100,
       duration: 3800,
